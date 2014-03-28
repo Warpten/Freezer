@@ -132,13 +132,15 @@ namespace Freezer
             box[index + 1] = bit >> 16;
             box[index]     = bit >> 24;
         }
+        
+        public string ToString() { return "blowfish"; }
     }
     
     class CBCMode
     {
         private BlowfishKey _key;
         private IPad _padding = null;
-        private PRNG _random;
+        // private PRNG _random;
         private byte[] _IV;
         private uint _blockSize = 0;
 
@@ -157,12 +159,11 @@ namespace Freezer
         {
             _key = key;
             _blockSize = key.GetBlockSize();
-            if (padding == null)
-                padding = new PKCS5(_blockSize);
-            else
-                padding.SetBlockSize(_blockSize);
             _padding = padding;
-            _random = new PRNG();
+            if (_padding == null)
+                _padding = new PKCS5();
+            _padding.SetBlockSize(_blockSize);
+            // _random = new PRNG();
             _IV = null;
         }
         
@@ -177,7 +178,10 @@ namespace Freezer
                 for (uint j = 0; j < _blockSize; ++j)
                     array[i + j] ^= encryptionIV[j];
                 array = _key.Encrypt(array, i);
-                // encryptionIV. ... // _local2.writeBytes(_arg1, _local3, blockSize);
+                // Encryption IV gets updated...
+                // Writes a sequence of blockSize bytes from _arg1, starting at _local3
+                // _local2.position = 0; _local2.writeBytes(_arg1, _local3, blockSize);
+                Buffer.BlockCopy(array, 0, encryptionIV, 0, blockSize);
             }
             return array;
         }
@@ -185,7 +189,78 @@ namespace Freezer
         public byte[] Decrypt(byte[] array)
         {
             byte[] decryptionIV = GetDecryptionIV();
-            // ...
+            byte[] tempBuffer = new byte[];
+            for (uint i = 0; i < array.Length; i += _blockSize)
+            {
+                // _local3.position = 0; _local3.writeBytes(_arg1, _local4, blockSize);
+                Buffer.BlockCopy(array, 0, tempBuffer, 0, blockSize);
+                array = _key.Decrypt(array, i);
+                for (uint j = 0; j < _blockSize; ++i)
+                    array[i + j] ^= decryptionIV[j];
+                // _local2.position = 0; _local2.writeBytes(_local3, 0, blockSize);
+                Buffer.BlockCopy(tempBuffer, 0, decryptionIV, 0, blockSize);
+            }
+            _padding.Unpad(ref array);
+            return array;
+        }
+        
+        private byte[] GetDecryptionIV()
+        {
+            // TODO: This should rely on PRNG if no IV is set
+            return IV;
+        }
+        
+        private byte[] GetEncryptionIV()
+        {
+            // TODO: This should rely on PRNG if no IV is set
+            return IV;
+        }
+        
+        public string ToString() { return _key.ToString() + "-cbc"; }
+    }
+    
+    interface IPad
+    {
+        void Pad(ref byte[] array);
+        void Unpad(ref byte[] array);
+        void SetBlockSize(uint blockSize);
+    }
+    
+    class NullPad : IPad
+    {
+        public void Pad(ref byte[] array) { }
+        public void Unpad(ref byte[] array) { }
+        public void SetBlockSize(uint blockSize) { }
+    }
+    
+    // Ye, this bad
+    class PKCS5 : IPad
+    {
+        private uint _blockSize;
+        
+        public PKCS5(uint blockSize = 0) { _blockSize = 0; }
+        public void SetBlockSize(uint b) { _blockSize = b; }
+        public void Pad(ref byte[] array)
+        {
+            uint padCount = _blockSize - array.Length % _blockSize;
+            byte[] copy = new byte[array.Length + padCount];
+            for (uint i = 0; i < padCount; ++i)
+                copy[array.Length + i] = padCount;
+            array = copy;
+        }
+        
+        // NYI
+        public void Unpad(ref byte[] array)
+        {
+            bool blockRemainder = array.Length % _blockSize;
+            if (blockRemainder != 0)
+                throw new Exception("PKCS5: Byte array length isn't a multiple of block size");
+            blockRemainder = array[array.Length - 1]; // Last item
+            uint copy = blockRemainder;
+            // while (copy > 0)
+            // {
+                // uint item = array[
+            // }
         }
     }
 }
